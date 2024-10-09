@@ -1,0 +1,115 @@
+# Напишите YAML-сценарий, который устанавливает Jenkins на Linux-сервер.
+# Подробности:
+# Используемые версии Linux: CentOS 7 и Ubuntu 18.04
+---
+- name: Установка Jenkins на CentOS 7 и Ubuntu 18.04
+  hosts: all
+  become: yes
+  remote_user: administrator
+  tasks:
+
+    - name: Обновление пакетов на CentOS 7
+      yum:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    - name: Обновление пакетов на Ubuntu 18.04
+      apt:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "Debian"
+
+    - name: Установка необходимых пакетов на CentOS 7
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop:
+        # - java-1.8.0-openjdk
+        - java-11-openjdk
+        - wget
+      when: ansible_os_family == "RedHat"
+
+    - name: Добавление Jenkins репозитория на CentOS 7
+      get_url:
+        url: http://pkg.jenkins.io/redhat-stable/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
+      when: ansible_os_family == "RedHat"
+
+    - name: Импорт GPG ключа Jenkins на CentOS 7
+      rpm_key:
+        state: present
+        key: https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+      when: ansible_os_family == "RedHat"
+
+    - name: Установка Jenkins на CentOS 7
+      yum:
+        name: jenkins
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Установка необходимых пакетов на Ubuntu 18.04
+      apt:
+        # name: openjdk-8-jdk
+        name: openjdk-11-jdk
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Загрузка init-system-helpers v1.56 на Ubuntu 18.04
+      when: ansible_distribution == "Ubuntu" and ansible_distribution_version == "18.04"
+      get_url:
+        url: https://launchpad.net/ubuntu/+source/init-system-helpers/1.56+nmu1~ubuntu18.04.1/+build/16863955/+files/init-system-helpers_1.56+nmu1~ubuntu18.04.1_all.deb
+        dest: /tmp/init-system-helpers_1.56_all.deb
+
+    - name: Установка init-system-helpers v1.56 на Ubuntu 18.04
+      when: ansible_distribution == "Ubuntu" and ansible_distribution_version == "18.04"
+      apt:
+        deb: /tmp/init-system-helpers_1.56_all.deb
+
+    - name: Импорт GPG ключа Jenkins на Ubuntu 18.04
+      apt_key:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Добавление Jenkins репозитория на Ubuntu 18.04
+      apt_repository:
+        repo: deb http://pkg.jenkins.io/debian-stable binary/
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Установка Jenkins на Ubuntu 18.04
+      apt:
+        name: jenkins
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Включение и запуск сервиса Jenkins
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Обеспечение доступа к серверу Jenkins на CentOS 7
+      firewalld:
+        port: 8080/tcp
+        permanent: yes
+        state: enabled
+      when: ansible_os_family == "RedHat"
+
+    - name: Перезапуск firewalld на CentOS 7
+      command: firewall-cmd --reload
+      when: ansible_os_family == "RedHat"
+
+    - name: Обеспечение доступа к серверу Jenkins на Ubuntu 18.04
+      ufw:
+        rule: allow
+        port: "8080"
+        proto: tcp
+      when: ansible_os_family == "Debian"
+
+    - name: Перезапуск UFW на Ubuntu 18.04
+      ufw:
+        state: reloaded
+      when: ansible_os_family == "Debian"

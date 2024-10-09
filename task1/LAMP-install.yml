@@ -1,0 +1,238 @@
+# Напишите YAML-сценарий, который устанавливает блоговый движок wordpress на LAMPсервер.
+# Подробности:
+# LAMP-аббревиатура, означающая Linux + Apache + MySQL + PHP. Используемые версии
+# Linux: CentOS 7 и Ubuntu 18.04. Версия wordpress для установки 4.9.
+---
+- name: Установка WordPress 4.9 на LAMP сервер
+  hosts: all
+  remote_user: administrator
+  become: yes
+  vars:
+    wordpress_version: 4.9
+    db_name: wordpress_db
+    db_user: wordpress_user
+    db_password: wordpress_password
+    db_root_password: root_password
+    server_name: example.com
+    server_port: 80
+  tasks:
+
+    - name: Обновление пакетов на CentOS 7
+      yum:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    - name: Обновление пакетов на Ubuntu 18.04
+      apt:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "Debian"
+
+    - name: Установка необходимых пакетов на Ubuntu
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - apache2
+        - mysql-server
+        - php
+        - php-mysql
+        - libapache2-mod-php
+        - php-gd
+        - php-xml
+        - php-mbstring
+        - php-curl
+        - php-zip
+      when: ansible_os_family == "Debian"
+
+    - name: Удаление старого Base репозитория на CentOS 7
+      yum_repository:
+        name: "base"
+        file: CentOS-Base
+        state: absent
+      when: ansible_os_family == "RedHat"
+
+    - name: Добавление нового Base репозитория на CentOS 7
+      yum_repository:
+        name: "base"
+        file: CentOS-Base
+        baseurl: https://mirror.yandex.ru/centos/7.9.2009/os/x86_64/
+        gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+        description: "CentOS-$releasever - Base"
+      when: ansible_os_family == "RedHat"
+
+    - name: Добавление нового Extras репозитория на CentOS 7
+      yum_repository:
+        name: "extras"
+        file: CentOS-Base
+        baseurl: https://mirror.yandex.ru/centos/7.9.2009/extras/x86_64/
+        gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+        description: "CentOS-$releasever - Extras"
+      when: ansible_os_family == "RedHat"
+
+    - name: Добавление нового Updates репозитория на CentOS 7
+      yum_repository:
+        name: "updates"
+        file: CentOS-Base
+        baseurl: https://mirror.yandex.ru/centos/7.9.2009/updates/x86_64/
+        gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+        description: "CentOS-$releasever - Updates"
+      when: ansible_os_family == "RedHat"
+
+    - name: Добавление нового EPEL репозитория на CentOS 7
+      ansible.builtin.yum_repository:
+        name: epel
+        file: epel
+        baseurl: https://download.fedoraproject.org/pub/epel/$releasever/$basearch/
+        gpgcheck: no
+        description: EPEL YUM repo
+      when: ansible_os_family == "RedHat"
+
+    - name: Установка Python 3 на CentOS
+      yum:
+        name: python3
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Установка необходимых пакетов на CentOS 7
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - httpd
+        - mariadb-server
+        - php
+        - php-mysql
+        - php-gd
+        - php-xml
+        - php-mbstring
+        - php-curl
+        - php-zip
+      when: ansible_os_family == "RedHat"
+
+    - name: Установка модуля PyMySQL для Python 3.x на CentOS
+      yum:
+        name: python3-PyMySQL
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Установка модуля pymysql для Python 3.x на Ubuntu
+      apt:
+        name: python3-pymysql
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Включение и запуск Apache на CentOS 7
+      systemd:
+        name: httpd
+        state: started
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Включение и запуск Apache на Ubuntu
+      systemd:
+        name: apache2
+        state: started
+        enabled: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Включение и запуск MySQL/MariaDB
+      systemd:
+        name: "{{ 'mariadb' if ansible_os_family == 'RedHat' else 'mysql' }}"
+        state: started
+        enabled: yes
+
+    - name: Настройка пароля root для MySQL на CentOS 7
+      mysql_user:
+        name: root
+        password: "{{ db_root_password }}"
+        host_all: yes
+        priv: "*.*:ALL,GRANT"
+      ignore_errors: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Настройка пароля root для MySQL на Ubuntu
+      mysql_user:
+        name: root
+        password: "{{ db_root_password }}"
+        host_all: yes
+        priv: "*.*:ALL,GRANT"
+        login_unix_socket: /run/mysqld/mysqld.sock
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Создание базы данных для WordPress
+      mysql_db:
+        login_user: root
+        login_password: "{{ db_root_password }}"
+        name: "{{ db_name }}"
+        state: present
+
+    - name: Создание пользователя MySQL для WordPress
+      mysql_user:
+        login_user: root
+        login_password: "{{ db_root_password }}"
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "{{ db_name }}.*:ALL"
+        state: present
+
+    - name: Скачивание WordPress версии 4.9
+      get_url:
+        url: "https://wordpress.org/wordpress-{{ wordpress_version }}.tar.gz"
+        dest: /tmp/wordpress.tar.gz
+
+    - name: Распаковка WordPress
+      unarchive:
+        src: /tmp/wordpress.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Копирование распакованных файлов на CentOS 7
+      copy:
+        src: /tmp/wordpress/
+        dest: /var/www/html/
+        owner: apache
+        group: apache
+        remote_src: true
+      when: ansible_os_family == "RedHat"
+
+    - name: Копирование распакованных файлов на Ubuntu
+      copy:
+        src: /tmp/wordpress/
+        dest: /var/www/html/
+        owner: www-data
+        group: www-data
+        remote_src: true
+      when: ansible_os_family == "Debian"
+
+    - name: Настройка конфигурации WordPress (wp-config.php)
+      template:
+        src: wp-config.php.j2
+        dest: /var/www/html/wp-config.php
+
+    - name: Удаление дефолтного index.html
+      file:
+        path: /var/www/html/index.html
+        state: absent
+
+    - name: Перезагрузка Apache для применения изменений
+      systemd:
+        name: "{{ 'httpd' if ansible_os_family == 'RedHat' else 'apache2' }}"
+        state: restarted
+
+    - name: Обеспечение доступа к серверу через HTTP (firewalld на CentOS)
+      firewalld:
+        port: 80/tcp
+        permanent: yes
+        state: enabled
+        immediate: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Обеспечение доступа к серверу через HTTP (ufw на Ubuntu)
+      ufw:
+        rule: allow
+        port: 80
+        proto: tcp
+      when: ansible_os_family == "Debian"
